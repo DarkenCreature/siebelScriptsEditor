@@ -11,6 +11,7 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
       ts: vscode.Uri.joinPath(workspaceUri, "compare", "compare.ts"),
       html: vscode.Uri.joinPath(workspaceUri, "compare", "compare.html"),
     } as const),
+  typesFolderUri = vscode.Uri.joinPath(workspaceUri, "types"),
   connectionShimFileUri =
     workspaceUri && vscode.Uri.joinPath(workspaceUri, "connection-shim.ts"),
   //extension settings
@@ -33,6 +34,7 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
   APPLET = "Applet",
   APPLICATION = "Application",
   WEBTEMP = "Web Template",
+  BUSOBJECT = "Business Object",
   scriptMeta = {
     [SERVICE]: {
       path: "Business Service Server Script",
@@ -146,7 +148,9 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
     manager: "manager",
     object: "objectItem",
     child: "childItem",
-    buscomp: "buscompItem",
+    busComp: "busCompItem",
+    busObject: "busObjectItem",
+    busObjectBusComp: "busObjectBusComp",
   } as const,
   //fields
   fields = {
@@ -170,15 +174,22 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
     pullScript: { fields: "Name,Script" },
     pullScripts: { fields: "Name,Script", searchSpec: "Inactive <> 'Y'" },
     pullDefinition: { fields: "Name,Definition" },
+    pullBusComps: { fields: "Name", searchSpec: "Inactive <> 'Y'" },
+    pullFields: { fields: "Name,PickList", searchSpec: "Inactive <> 'Y'" },
+    pullPickList: {
+      fields: "Name",
+      searchSpec: "Inactive <> 'Y' AND Type Value IS NOT NULL",
+    },
     compareScript: { fields: "Name,Script" },
     compareDefinition: { fields: "Name,Definition" },
-    pullFields: { fields: "Name,PickList", searchSpec: "Inactive <> 'Y'" },
   } as const,
   //constant paths
   paths = {
     workspaces: "data/Workspace/Repository Workspace",
     test: "workspace/MAIN/Application",
     project: "Project",
+    busObjectComp: "Business Object Component",
+    pickList: "Pick List",
   } as const,
   //message answers
   deleteNo = ["Delete", "No"] as const,
@@ -222,6 +233,20 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
         new vscode.ThemeColor("charts.red")
       ),
       tooltip: "Modified",
+    },
+    fieldsDownloaded: {
+      icon: new vscode.ThemeIcon(
+        "check",
+        new vscode.ThemeColor("charts.green")
+      ),
+      tooltip: "Overwrite fields for autocompletion",
+    },
+    fieldsNotDownloaded: {
+      icon: new vscode.ThemeIcon(
+        "cloud",
+        new vscode.ThemeColor("charts.yellow")
+      ),
+      tooltip: "Get business component and fields for autocompletion",
     },
   } as const,
   selectCommand = {
@@ -304,6 +329,9 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
     pullScript: "Unable to pull, script was not found in Siebel!",
     pullScripts: "Unable to pull, object was not found in Siebel!",
     pullDefinition: "Unable to pull, web template was not found in Siebel!",
+    pullBusComps: "",
+    pullFields: "",
+    pullPickList: "",
     compareScript:
       "Unable to compare, script does not exists in the selected workspace!",
     compareDefinition:
@@ -317,7 +345,8 @@ export const workspaceUri = vscode.workspace.workspaceFolders?.[0]?.uri!,
   regexp = {
     workspace: /^[A-Za-z0-9_-]+$/,
     identifier: /^[A-Za-z_$][A-Za-z0-9_$]*$/,
-    buscomp: /GetBusComp\s*\(\s*["']([^"']+)["']\s*\)/g,
+    busObject: /GetBusObject\s*\(\s*["']([^"']+)["']\s*\)/g,
+    busComp: /GetBusComp\s*\(\s*["']([^"']+)["']\s*\)/g,
   } as const,
   buttonError = new Error();
 

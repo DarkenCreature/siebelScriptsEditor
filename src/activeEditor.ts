@@ -10,9 +10,8 @@ import {
   itemStates,
   disableAllButtons,
   scriptMeta,
-  query,
-  BUSCOMP,
   regexp,
+  typesFolderUri,
 } from "./constants";
 import {
   getConfig,
@@ -34,9 +33,11 @@ import {
   isTypeScript,
   isTypeWebTemp,
   isWorkspaceEditable,
-  writeBusCompFieldsType,
-  writeFieldsType,
   setConnectionShim,
+  getBusCompFieldsType,
+  getBusObjectBusCompsType,
+  writeObjectTypes,
+  urlToFolder,
 } from "./utils";
 import { treeView } from "./treeView";
 
@@ -54,6 +55,7 @@ class ActiveEditor {
   private declare field: Field;
   private declare parentPath: string;
   private declare isTreeActive: boolean;
+  private declare typesUri: vscode.Uri;
 
   private constructor() {}
 
@@ -94,8 +96,11 @@ class ActiveEditor {
       this.workspace = parts.pop()!;
       const config = getConfig(parts.pop()!);
       if (Object.keys(config).length === 0) throw buttonError;
-      if (!this.config || this.config.name !== config.name)
-        await setConnectionShim(config.name);
+      if (!this.config || this.config.url !== config.url) {
+        const urlFolder = urlToFolder(config.url);
+        this.typesUri = vscode.Uri.joinPath(typesFolderUri, urlFolder);
+        await setConnectionShim(config.url);
+      }
       this.config = config;
       this.isTreeActive =
         treeView.connection === this.config.name &&
@@ -267,30 +272,27 @@ class ActiveEditor {
     treeView.activeItemState = state;
   };
 
-  pullFields = async () => {
+  pullObjectTypes = async () => {
     const text = this.document.getText(),
-      buscomps = new Set<string>();
-    for (const [, name] of text.matchAll(regexp.buscomp)) {
-      buscomps.add(name);
+      busObjects = new Set<string>(),
+      busComps = new Set<string>(),
+      config = {
+        ...this.config,
+        url: joinPath(this.config.url, "workspace", this.workspace),
+      };
+    for (const [, name] of text.matchAll(regexp.busComp)) {
+      busComps.add(name);
     }
-    for (const buscomp of buscomps) {
-      const path = joinPath(
-          "workspace",
-          this.workspace,
-          BUSCOMP,
-          buscomp,
-          "Field"
-        ),
-        response = await getObject(
-          "search",
-          this.config,
-          path,
-          query.pullFields
-        );
-      if (response.length === 0) continue;
-      await writeFieldsType(this.config.name, buscomp, response);
+    for (const [, name] of text.matchAll(regexp.busObject)) {
+      busObjects.add(name);
     }
-    await writeBusCompFieldsType(this.config.name);
+    for (const busObject of busObjects) {
+      await getBusObjectBusCompsType(this.typesUri, config, busObject);
+    }
+    for (const busComp of busComps) {
+      await getBusCompFieldsType(this.typesUri, config, busComp);
+    }
+    await writeObjectTypes(this.typesUri);
   };
 }
 

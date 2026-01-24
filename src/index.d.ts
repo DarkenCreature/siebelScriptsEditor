@@ -5,6 +5,7 @@ type Script =
   | "Applet"
   | "Application";
 type WebTemp = "Web Template";
+type BusObject = "Business Object";
 type Type = Script | WebTemp;
 
 type RestConfig = {
@@ -81,7 +82,10 @@ type RestAction =
   | "pullScripts"
   | "pullDefinition"
   | "compareScript"
-  | "compareDefinition";
+  | "compareDefinition"
+  | "pullBusComps"
+  | "pullFields"
+  | "pullPickList";
 
 //file extensions
 type FileExt = "js" | "ts" | "html";

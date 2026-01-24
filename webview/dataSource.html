@@ -33,7 +33,7 @@
   <script>
     const vscode = acquireVsCodeApi(),
       state = vscode.getState() ?? {},
-      objects = ["Business Service", "Business Component", "Applet", "Application", "Web Template"],
+      objects = ["Business Service", "Business Component", "Applet", "Application", "Web Template", "Business Object"],
       createOptions = (items = [], selected) =>
         items.map((item) => `<option class="option" value="${item}" ${item === selected ? "selected" : ""}>${item}</option>`).join(""),
       selectConnection = () => {

@@ -26,7 +26,7 @@ export async function activate({
       newScript: activeEditor.newScript,
       search: activeEditor.search,
       compare: activeEditor.compare,
-      pullFields: activeEditor.pullFields,
+      pullFields: activeEditor.pullObjectTypes,
       newWorkspace: webView.newWorkspace,
       refreshState: webView.refreshState,
       newConnection: webView.createConfig(extensionUri, subscriptions, "new"),
@@ -40,6 +40,7 @@ export async function activate({
       newScriptTree: treeView.newScript,
       revertTree: treeView.revert,
       compareTree: treeView.compare,
+      pullBusCompsTree: treeView.pullBusComps,
     } as const;
 
     for (const [command, callback] of Object.entries(commands)) {

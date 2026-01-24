@@ -25,6 +25,7 @@ import {
   yesNo,
   regexp,
   connectionShimFileUri,
+  BUSOBJECT,
 } from "./constants";
 
 export const getConfig = (name: string) => {
@@ -163,7 +164,6 @@ export const getLocalWorkspaces = async (connection: string) => {
   const workspaces: string[] = [],
     folderUri = vscode.Uri.joinPath(workspaceUri, connection);
   await createFolder(connection, "MAIN");
-  await writeBusCompFieldsType(connection, false);
   const content = await vscode.workspace.fs.readDirectory(folderUri);
   for (const [workspace, fileType] of content) {
     if (fileType !== 2) continue;
@@ -399,63 +399,119 @@ export const setupWorkspaceFolder = async (extensionUri: vscode.Uri) => {
   }
 };
 
-export const writeFieldsType = async (
-  connection: string,
-  buscomp: string,
-  response: RestResponse
+export const urlToFolder = (url: string) =>
+  url
+    .replace(/^https?:\/\//i, "")
+    .replace(/\/siebel\/v[\d.]+$/i, "")
+    .replace(/[^a-z0-9]+/gi, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .toLowerCase();
+
+export const getBusObjectBusCompsType = async (
+  //context:  TreeView | ActiveEditor,
+  typesUri: vscode.Uri,
+  config: RestConfig,
+  busObject: string
 ) => {
+  const path = joinPath(BUSOBJECT, busObject, paths.busObjectComp),
+    response = await getObject("pullBusComps", config, path);
+  if (response.length === 0) return;
   const fileUri = vscode.Uri.joinPath(
-      workspaceUri,
-      connection,
-      "fields",
-      `${buscomp}.ts`
+      typesUri,
+      "busobjects",
+      `${busObject}.ts`
     ),
     isFile = await exists(fileUri),
-    fields = [];
+    busComps = [];
   if (isFile) {
     const answer = await vscode.window.showInformationMessage(
-      `Do you want to overwrite the fields for the ${buscomp} business component?`,
+      `Do you want to overwrite the business components for the ${busObject} business object?`,
       ...yesNo
     );
     if (answer !== "Yes") return;
   }
-  for (const { Name, PickList } of response) {
-    fields.push(`"${Name}"`);
-    if (!PickList) continue;
-    fields.push(`"${Name}.TransCode"`);
+  //pagesize kezelése!!!!!!
+  for (const { Name } of response) {
+    busComps.push(Name);
   }
-  const content = `export type Fields = ${fields.join(" | ")};`;
+  const content = `const list = ${JSON.stringify(
+    busComps
+  )} as const;\nexport type BusComps = (typeof list)[number];`;
   await writeFile(fileUri, content);
 };
 
-export const writeBusCompFieldsType = async (
-  connection: string,
-  overwrite = true
+export const getBusCompFieldsType = async (
+  typesUri: vscode.Uri,
+  config: RestConfig,
+  busComp: string
 ) => {
-  const typeFolderUri = vscode.Uri.joinPath(workspaceUri, connection, "fields"),
-    isFolder = await exists(typeFolderUri),
-    fileUri = vscode.Uri.joinPath(
-      workspaceUri,
-      connection,
-      "buscomp-fields.ts"
-    ),
-    isFile = await exists(fileUri);
-  if (isFile && !overwrite) return;
-  const rows = [],
-    files = isFolder
-      ? await vscode.workspace.fs.readDirectory(typeFolderUri)
-      : [];
-  for (const [nameExt, fileType] of files) {
-    const [name, ext] = nameExt.split(".");
-    if (fileType !== 1 || ext !== "ts") continue;
-    rows.push(`\t\t"${name}": FieldBase | import("./fields/${name}").Fields;`);
+  const path = joinPath(BUSCOMP, busComp, "Field");
+  const response = await getObject("pullFields", config, path);
+  if (response.length === 0) return;
+  const fileUri = vscode.Uri.joinPath(typesUri, "buscomps", `${busComp}.ts`),
+    isFile = await exists(fileUri),
+    fields = [];
+  if (isFile) {
+    const answer = await vscode.window.showInformationMessage(
+      `Do you want to overwrite the fields for the ${busComp} business component?`,
+      ...yesNo
+    );
+    if (answer !== "Yes") return;
   }
-  const content = `export type BusCompFields = {\n${rows.join("\n")}\n}`;
+  //pagesize kezelése!!!!!!
+  for (const { Name, PickList } of response) {
+    fields.push(Name);
+    if (!PickList) continue;
+    const pickListPath = joinPath(paths.pickList, PickList),
+      typeValueNotNull = await getObject("pullPickList", config, pickListPath);
+    if (typeValueNotNull.length === 0) continue;
+    fields.push(`${Name}.TransCode`);
+  }
+  const content = `const list = ${JSON.stringify(
+    fields
+  )} as const;\nexport type Fields = (typeof list)[number];`;
   await writeFile(fileUri, content);
 };
 
-export const setConnectionShim = async (connection: string) => {
-  const content = `import { BusCompFields } from "./${connection}/buscomp-fields";
-export type FieldMap = BusCompFields;`;
+export const writeObjectTypes = async (typesUri: vscode.Uri) => {
+  try {
+    const busObjectsUri = vscode.Uri.joinPath(typesUri, "busobjects"),
+      busCompsUri = vscode.Uri.joinPath(typesUri, "buscomps"),
+      fileUri = vscode.Uri.joinPath(typesUri, "types.ts");
+    const busObjects = (await exists(busObjectsUri))
+        ? await vscode.workspace.fs.readDirectory(busObjectsUri)
+        : [],
+      busObjectRows = [],
+      busComps = (await exists(busCompsUri))
+        ? await vscode.workspace.fs.readDirectory(busCompsUri)
+        : [],
+      busCompRows = [];
+    for (const [nameExt, fileType] of busObjects) {
+      const [name, ext] = nameExt.split(".");
+      if (fileType !== 1 || ext !== "ts") continue;
+      busObjectRows.push(
+        `\t"${name}": import("./busobjects/${name}").BusComps;`
+      );
+    }
+    for (const [nameExt, fileType] of busComps) {
+      const [name, ext] = nameExt.split(".");
+      if (fileType !== 1 || ext !== "ts") continue;
+      busCompRows.push(
+        `\t"${name}": BusCompFieldType<import("./buscomps/${name}").Fields>;`
+      );
+    }
+    const content = `export type BusObjectBusComps = {\n${busObjectRows.join(
+      "\n"
+    )}\n};\nexport type BusCompFields = {\n${busCompRows.join("\n")}\n};`;
+    await writeFile(fileUri, content);
+  } catch (e: any) {
+    vscode.window.showErrorMessage(e.toString());
+  }
+};
+
+export const setConnectionShim = async (url: string) => {
+  const typeFolder = urlToFolder(url),
+    content = `import { BusObjectBusComps, BusCompFields } from "./types/${typeFolder}/types";\nexport type BusObjMap = BusObjectBusComps;\nexport type BusCompMap = BusCompFields;`;
   await writeFile(connectionShimFileUri, content);
 };

@@ -15,6 +15,9 @@ import {
   BUSCOMP,
   SERVICE,
   WEBTEMP,
+  BUSOBJECT,
+  paths,
+  typesFolderUri,
 } from "./constants";
 import {
   getScriptsOnDisk,
@@ -33,20 +36,27 @@ import {
   createNewScript,
   createNewService,
   isWorkspaceEditable,
-  writeFieldsType,
-  writeBusCompFieldsType,
+  setConnectionShim,
+  getBusCompFieldsType,
+  writeObjectTypes,
+  urlToFolder,
+  getBusObjectBusCompsType,
 } from "./utils";
 
 class TreeView {
   private static instance: TreeView;
   private readonly treeObject;
   private readonly _onDidChangeTreeData = new vscode.EventEmitter();
-  private readonly treeData = new Map<Type, ObjectManager | WebTempManager>([
+  private readonly treeData = new Map<
+    Type | BusObject,
+    ObjectManager | WebTempManager | BusObjectManager
+  >([
     [SERVICE, new ObjectManager(SERVICE)],
     [BUSCOMP, new ObjectManager(BUSCOMP)],
     [APPLET, new ObjectManager(APPLET)],
     [APPLICATION, new ObjectManager(APPLICATION)],
-    [WEBTEMP, new WebTempManager(WEBTEMP)],
+    [WEBTEMP, new WebTempManager()],
+    [BUSOBJECT, new BusObjectManager()],
   ]);
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   readonly refresh = (treeItem: vscode.TreeItem) =>
@@ -60,6 +70,9 @@ class TreeView {
   };
   private baseURL = "";
   declare folderUri: vscode.Uri;
+  declare typesUri: vscode.Uri;
+  declare busObjectTypesUri: vscode.Uri;
+  declare busCompTypesUri: vscode.Uri;
   activeItem: ScriptItem | WebTempItem | undefined;
   syncedItem: ScriptItem | WebTempItem | undefined;
   isSyncing = false;
@@ -75,7 +88,8 @@ class TreeView {
       showCollapseAll: true,
     });
     this.treeObject.onDidExpandElement(async ({ element }) => {
-      if (element instanceof ObjectItem) await element.select();
+      if (element instanceof ObjectItem || element instanceof BusObjectItem)
+        await element.select();
     });
   }
 
@@ -123,6 +137,9 @@ class TreeView {
   compare = async (treeItem: ScriptItem | WebTempItem) =>
     await treeItem.compare();
 
+  pullBusComps = async (treeItem: BusObjectItem) =>
+    await treeItem.pullBusComps();
+
   getTreeItem(
     treeItem:
       | ObjectManager
@@ -156,6 +173,13 @@ class TreeView {
     fileExtension = "js",
     maxPageSize = 100,
   }: Config) {
+    if (this.baseURL !== url) {
+      const urlFolder = urlToFolder(url);
+      this.typesUri = vscode.Uri.joinPath(typesFolderUri, urlFolder);
+      this.busObjectTypesUri = vscode.Uri.joinPath(this.typesUri, "busobjects");
+      this.busCompTypesUri = vscode.Uri.joinPath(this.typesUri, "buscomps");
+      await setConnectionShim(url);
+    }
     this.baseURL = url;
     this.config.username = username;
     this.config.password = password;
@@ -173,7 +197,10 @@ class TreeView {
     );
     await Promise.all(
       [...this.treeData].map(async ([type, treeItem]) => {
-        treeItem.folderUri = vscode.Uri.joinPath(this.folderUri, type);
+        treeItem.folderUri =
+          type !== BUSOBJECT
+            ? vscode.Uri.joinPath(this.folderUri, type)
+            : treeView.typesUri;
         await treeItem.search();
       })
     );
@@ -196,7 +223,9 @@ class TreeView {
   }
 
   async setActiveItem(type: Script | WebTemp, name: string, parent?: string) {
-    this.activeItem = await this.treeData.get(type)!.getItem(name, parent);
+    this.activeItem = await (<ObjectManager | WebTempManager>(
+      this.treeData.get(type)
+    )).getItem(name, parent);
   }
 
   set activeItemState(state: ItemState) {
@@ -221,14 +250,14 @@ class TreeView {
 }
 
 abstract class ManagerBase<
-  T extends ObjectItem | WebTempItem
+  T extends ObjectItem | WebTempItem | BusObjectItem
 > extends vscode.TreeItem {
   override readonly collapsibleState = vscode.TreeItemCollapsibleState.Expanded;
   readonly parent = undefined;
   readonly treeData = new Map<string, T>();
-  declare label: string;
+  declare label: Type | BusObject; //string;
   declare folderUri: vscode.Uri;
-  abstract readonly path: Type;
+  abstract readonly path: Type | BusObject;
   protected abstract readonly searchFields: QueryParams["fields"];
   protected abstract setTreeItems(data?: RestResponse): Promise<void>;
 
@@ -248,7 +277,7 @@ abstract class ManagerBase<
           fields: this.searchFields,
           searchSpec: `Name LIKE '${searchString}*' AND Inactive <> 'Y'`,
         },
-        data = await treeView.getObject(this.path, params);
+        data = await treeView.getObject(this.label, params);
       await this.setTreeItems(data);
     }, 300);
   }
@@ -310,14 +339,14 @@ class ObjectManager extends ManagerBase<ObjectItem> {
 }
 
 class WebTempManager extends ManagerBase<WebTempItem> {
+  override readonly label = WEBTEMP;
+  override readonly contextValue = contextValues.manager;
   protected readonly searchFields = query.pullDefinition.fields;
-  readonly path;
+  readonly path = WEBTEMP;
   declare onDisk: OnDisk;
 
-  constructor(type: WebTemp) {
-    super(type);
-    this.contextValue = contextValues.manager;
-    this.path = type;
+  constructor() {
+    super(WEBTEMP);
   }
 
   protected async setTreeItems(data?: RestResponse) {
@@ -326,7 +355,7 @@ class WebTempManager extends ManagerBase<WebTempItem> {
       source = diskOnly
         ? await Promise.all(
             [...this.onDisk.keys()].map(async (Name) => {
-              const path = joinPath(this.path, Name),
+              const path = joinPath(this.label, Name),
                 data = await treeView.getObject(path, query.pullDefinition),
                 Definition = data[0]?.Definition;
               return { Name, Definition };
@@ -359,6 +388,60 @@ class WebTempManager extends ManagerBase<WebTempItem> {
   }
 }
 
+class BusObjectManager extends ManagerBase<BusObjectItem> {
+  override readonly label = BUSOBJECT;
+  override readonly contextValue = contextValues.manager;
+  protected readonly searchFields = fields.name;
+  readonly path = BUSOBJECT;
+  declare busObjectFolderUri: vscode.Uri;
+  declare busCompFolderUri: vscode.Uri;
+  declare busObjectsOnDisk: OnDisk;
+  declare busCompsOnDisk: OnDisk;
+
+  constructor() {
+    super(BUSOBJECT);
+  }
+
+  protected async setTreeItems(data?: RestResponse) {
+    /*const [source, state] = data
+      ? [data, itemStates.online]
+      : [await getScriptsOnDisk(treeView.typesUri), itemStates.offline];
+    this.iconPath = state.icon;
+    this.tooltip = state.tooltip;
+    this.treeData.clear();
+    await Promise.all(
+      source.map(async ({ Name: label }) => {
+        const item = new BusObjectItem(label, this);
+        //await item.setOnDisk();
+        this.treeData.set(label, item);
+      })
+    );*/
+    this.busObjectsOnDisk = await getScriptsOnDisk(treeView.busObjectTypesUri);
+    this.busCompsOnDisk = await getScriptsOnDisk(treeView.busCompTypesUri);
+    this.treeData.clear();
+    if (data) {
+      this.iconPath = itemStates.online.icon;
+      this.tooltip = itemStates.online.tooltip;
+      for (const { Name: label } of data) {
+        const item = new BusObjectItem(label, this);
+        item.state = this.busObjectsOnDisk.has(label)
+          ? itemStates.same
+          : itemStates.siebel;
+        this.treeData.set(label, item);
+      }
+    } else {
+      this.iconPath = itemStates.offline.icon;
+      this.tooltip = itemStates.offline.tooltip;
+      for (const [busObject] of this.busObjectsOnDisk) {
+        const item = new BusObjectItem(busObject, this);
+        item.state = itemStates.same;
+        this.treeData.set(busObject, item);
+      }
+    }
+    treeView.refresh(this);
+  }
+}
+
 class ObjectItem extends vscode.TreeItem {
   override readonly collapsibleState =
     vscode.TreeItemCollapsibleState.Collapsed;
@@ -372,7 +455,7 @@ class ObjectItem extends vscode.TreeItem {
     super(label);
     this.parent = parent;
     this.contextValue =
-      parent.path === BUSCOMP ? contextValues.buscomp : contextValues.object;
+      parent.label === BUSCOMP ? contextValues.busComp : contextValues.object;
   }
 
   get treeItems() {
@@ -380,15 +463,11 @@ class ObjectItem extends vscode.TreeItem {
   }
 
   get path() {
-    return joinPath(this.parent.path, this.label, this.parent.scriptPath);
+    return joinPath(this.parent.label, this.label, this.parent.scriptPath);
   }
 
   get folderUri() {
     return vscode.Uri.joinPath(this.parent.folderUri, this.label);
-  }
-
-  get fieldPath() {
-    return joinPath(this.parent.path, this.label, "Field");
   }
 
   set state(state: ItemState) {
@@ -477,7 +556,7 @@ class ObjectItem extends vscode.TreeItem {
   async newScript() {
     const fileUri = await createNewScript(
       this.folderUri,
-      this.parent.path,
+      <Script>this.parent.label,
       this.label,
       treeView.config.fileExtension
     );
@@ -488,10 +567,8 @@ class ObjectItem extends vscode.TreeItem {
   }
 
   async pullFields() {
-    const response = await treeView.getObject(this.fieldPath, query.pullFields);
-    if (response.length === 0) return;
-    await writeFieldsType(treeView.connection, this.label, response);
-    await writeBusCompFieldsType(treeView.connection);
+    await getBusCompFieldsType(treeView.typesUri, treeView.config, this.label);
+    await writeObjectTypes(treeView.typesUri);
   }
 }
 
@@ -608,6 +685,90 @@ class WebTempItem extends ChildItem<WebTempManager> {
   }
 
   refresh() {
+    treeView.refresh(this);
+  }
+}
+
+class BusObjectItem extends vscode.TreeItem {
+  override readonly collapsibleState =
+    vscode.TreeItemCollapsibleState.Collapsed;
+  override readonly contextValue = contextValues.busObject;
+  declare label: string;
+  declare onDisk: OnDisk;
+  parent: BusObjectManager;
+  treeData = new Map<string, BusCompItem>();
+
+  constructor(label: string, parent: BusObjectManager) {
+    super(label);
+    this.parent = parent;
+  }
+
+  set state(state: ItemState) {
+    this.iconPath = state.icon;
+    this.tooltip = state.tooltip;
+  }
+
+  get treeItems() {
+    return [...this.treeData.values()];
+  }
+
+  get path() {
+    return joinPath(this.parent.label, this.label, paths.busObjectComp);
+  }
+
+  async select() {
+    this.treeData.clear();
+    const data = await treeView.getObject(this.path, query.pullBusComps);
+    await Promise.all(
+      data.map(async ({ Name: label }) => {
+        const item = new BusCompItem(label, this);
+        item.state = this.parent.busCompsOnDisk.has(label)
+          ? itemStates.same
+          : itemStates.siebel;
+        this.treeData.set(item.label, item);
+        return item;
+      })
+    );
+    treeView.refresh(this);
+  }
+
+  async pullBusComps() {
+    await getBusObjectBusCompsType(
+      treeView.typesUri,
+      treeView.config,
+      this.label
+    );
+    await writeObjectTypes(treeView.typesUri);
+    this.state = itemStates.same;
+    treeView.refresh(this);
+  }
+}
+
+class BusCompItem extends vscode.TreeItem {
+  override readonly collapsibleState = vscode.TreeItemCollapsibleState.None;
+  override readonly contextValue = contextValues.busObjectBusComp;
+  declare label: string;
+  parent;
+
+  constructor(label: string, parent: BusObjectItem) {
+    super(label);
+    this.parent = parent;
+    this.command = { ...selectCommand, arguments: [this] };
+  }
+
+  set state(state: ItemState) {
+    this.iconPath = state.icon;
+    this.tooltip = state.tooltip;
+  }
+
+  get path(): string {
+    return joinPath(this.parent.path, this.label);
+  }
+
+  async select() {
+    await getBusCompFieldsType(treeView.typesUri, treeView.config, this.label);
+    await writeObjectTypes(treeView.typesUri);
+    this.state = itemStates.same;
     treeView.refresh(this);
   }
 }
