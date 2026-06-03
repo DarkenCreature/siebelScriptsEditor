@@ -1,8 +1,8 @@
 import * as vscode from "vscode";
-import { setupWorkspaceFolder } from "./utils";
-import { webView } from "./webView";
-import { activeEditor } from "./activeEditor";
-import { treeView } from "./treeView";
+import { setupWorkspaceFolder } from "./util/file";
+import { webView } from "./view/webView";
+import { activeEditor } from "./editor/activeEditor";
+import { treeView } from "./tree/treeView";
 
 export async function activate({
   extensionUri,
@@ -10,47 +10,9 @@ export async function activate({
 }: vscode.ExtensionContext) {
   try {
     await setupWorkspaceFolder(extensionUri);
-
-    vscode.window.registerWebviewViewProvider("extensionView", {
-      resolveWebviewView: webView.createDataSource(extensionUri, subscriptions),
-    });
-
-    vscode.window.onDidChangeActiveTextEditor(activeEditor.parseFilePath);
-    vscode.workspace.onDidRenameFiles(activeEditor.reparseFilePath);
-    vscode.workspace.onDidChangeConfiguration(webView.refreshConfig);
-    vscode.workspace.onDidChangeTextDocument(treeView.changeListener);
-
-    const commands = {
-      push: activeEditor.push,
-      pushAll: activeEditor.pushAll,
-      newScript: activeEditor.newScript,
-      search: activeEditor.search,
-      compare: activeEditor.compare,
-      pullFields: activeEditor.pullObjectTypes,
-      newWorkspace: webView.newWorkspace,
-      refreshState: webView.refreshState,
-      newConnection: webView.createConfig(extensionUri, subscriptions, "new"),
-      editConnection: webView.createConfig(extensionUri, subscriptions, "edit"),
-      selectTreeItem: treeView.select,
-      searchDisk: treeView.searchDisk,
-      showFilesOnDisk: treeView.showFilesOnDisk,
-      newServiceTree: treeView.newService,
-      pullFieldsTree: treeView.pullFields,
-      pullAllTree: treeView.pullAll,
-      newScriptTree: treeView.newScript,
-      revertTree: treeView.revert,
-      compareTree: treeView.compare,
-      pullBusCompsTree: treeView.pullBusComps,
-    } as const;
-
-    for (const [command, callback] of Object.entries(commands)) {
-      subscriptions.push(
-        vscode.commands.registerCommand(
-          `siebelscriptandwebtempeditor.${command}`,
-          callback
-        )
-      );
-    }
+    webView.init(subscriptions, extensionUri);
+    treeView.init(subscriptions);
+    activeEditor.init(subscriptions);
   } catch (err: any) {
     vscode.window.showErrorMessage(err.message);
   }

@@ -72,7 +72,7 @@
 				"when": "workspaceFolderCount > 0 && siebelscriptandwebtempeditor.compareEnabled && !isInDiffEditor"
 			},
 			{
-				"command": "siebelscriptandwebtempeditor.pullFields",
+				"command": "siebelscriptandwebtempeditor.pullObjectsFromText",
 				"title": "Get business object, business components and fields for autocompletion",
 				"icon": "$(symbol-ruler)",
 				"when": "workspaceFolderCount > 0 && siebelscriptandwebtempeditor.searchEnabled && !isInDiffEditor"
@@ -122,7 +122,7 @@
 				"icon": "$(new-folder)"
 			},
 			{
-				"command": "siebelscriptandwebtempeditor.pullFieldsTree",
+				"command": "siebelscriptandwebtempeditor.pullBusCompTree",
 				"title": "Get Business Component And Fields For Autocompletion",
 				"icon": "$(symbol-ruler)"
 			},
@@ -147,7 +147,7 @@
 				"icon": "$(symbol-boolean)"
 			},
 			{
-				"command": "siebelscriptandwebtempeditor.pullBusCompsTree",
+				"command": "siebelscriptandwebtempeditor.pullBusObjectTree",
 				"title": "Get Business Object Components For Autocompletion",
 				"icon": "$(repo-pull)"
 			}
@@ -180,7 +180,7 @@
 					"when": "workspaceFolderCount > 0 && siebelscriptandwebtempeditor.compareEnabled && !isInDiffEditor"
 				},
 				{
-					"command": "siebelscriptandwebtempeditor.pullFields",
+					"command": "siebelscriptandwebtempeditor.pullObjectsFromText",
 					"group": "navigation@5",
 					"when": "workspaceFolderCount > 0 && siebelscriptandwebtempeditor.searchEnabled && !isInDiffEditor"
 				}
@@ -224,7 +224,7 @@
 					"group": "inline@2"
 				},
 				{
-					"command": "siebelscriptandwebtempeditor.pullFieldsTree",
+					"command": "siebelscriptandwebtempeditor.pullBusCompTree",
 					"when": "viewItem == busCompItem",
 					"group": "inline@0"
 				},
@@ -249,7 +249,7 @@
 					"group": "inline@1"
 				},
 				{
-					"command": "siebelscriptandwebtempeditor.pullBusCompsTree",
+					"command": "siebelscriptandwebtempeditor.pullBusObjectTree",
 					"when": "viewItem == busObjectItem",
 					"group": "inline@0"
 				}
@@ -286,7 +286,7 @@
 		"run-in-browser": "vscode-test-web --browserType=chromium --extensionDevelopmentPath=. ."
 	},
 	"dependencies": {
-		"axios": "^1.8.4"
+		"axios": "^1.16.1"
 	},
 	"devDependencies": {
 		"@types/glob": "^7.1.4",

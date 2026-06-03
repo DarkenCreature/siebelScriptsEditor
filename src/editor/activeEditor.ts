@@ -1,61 +1,75 @@
 import * as vscode from "vscode";
+import { itemStates } from "../tree/treeConstants";
+import { treeView } from "../tree/treeView";
 import {
-  buttonError,
-  compareOptions,
-  error,
-  paths,
-  pushNo,
-  pushAllNo,
-  fields,
-  itemStates,
-  disableAllButtons,
-  scriptMeta,
-  regexp,
-  typesFolderUri,
-} from "./constants";
+  searchInFiles,
+  compareObjects,
+  registerCommands,
+  setButtonVisibility,
+  Subscription,
+} from "../util/command";
 import {
-  getConfig,
-  getObject,
   isFileScript,
   isFileWebTemp,
-  putObject,
-  readFile,
-  setButtonVisibility,
   getScriptsOnDisk,
-  joinPath,
-  isScriptNameValid,
   getFileUri,
-  compareObjects,
-  getLocalWorkspaces,
-  searchInFiles,
-  createNewScript,
   openFile,
+  getLocalWorkspaces,
+  readFile,
+  FileExt,
+} from "../util/file";
+import {
+  fields,
+  putObject,
+  getObject,
+  paths,
+  joinWorkspace,
+  joinUrl,
+  queryObject,
+  Type,
+  Script,
+  joinChild,
+  getPayload,
+  Config,
+} from "../util/rest";
+import {
   isTypeScript,
   isTypeWebTemp,
   isWorkspaceEditable,
-  setConnectionShim,
-  getBusCompFieldsType,
-  getBusObjectBusCompsType,
-  writeObjectTypes,
-  urlToFolder,
-} from "./utils";
-import { treeView } from "./treeView";
+  isScriptNameValid,
+} from "../util/validation";
+import { createNewScript } from "../util/creation";
+import { typeGenerator } from "../typegen/typeGenerator";
+import { webView } from "../view/webView";
+
+const pushNo = ["Push", "No"] as const,
+  pushAllNo = ["Push All", "No"] as const,
+  disableAllButtons = {
+    push: false,
+    pushAll: false,
+    search: false,
+    compare: false,
+  } as const,
+  compareOptions = {
+    title: "Choose a workspace to compare against",
+    placeHolder: "Workspace",
+    canPickMany: false,
+  } as const,
+  buttonError = new Error();
 
 class ActiveEditor {
   private static instance: ActiveEditor;
   private editor: vscode.TextEditor | undefined;
-  private declare document: vscode.TextDocument;
-  private declare folderUri: vscode.Uri;
-  private declare name: string;
-  private declare ext: FileExt;
-  private declare parent: string;
-  private declare type: Type;
-  private declare workspace: string;
-  private declare config: Config;
-  private declare field: Field;
-  private declare parentPath: string;
-  private declare isTreeActive: boolean;
-  private declare typesUri: vscode.Uri;
+  declare private document: vscode.TextDocument;
+  declare private folderUri: vscode.Uri;
+  declare private name: string;
+  declare private ext: FileExt;
+  declare private parent: string;
+  declare private type: Type;
+  declare private workspace: string;
+  declare private config: Config;
+  declare private field: typeof fields.script | typeof fields.definition;
+  declare private parentPath: string;
 
   private constructor() {}
 
@@ -64,7 +78,21 @@ class ActiveEditor {
     return ActiveEditor.instance;
   }
 
-  parseFilePath = async (textEditor: vscode.TextEditor | undefined) => {
+  init(subscriptions: Subscription[]) {
+    vscode.window.onDidChangeActiveTextEditor(this.parseFilePath);
+    vscode.workspace.onDidRenameFiles(this.reparseFilePath);
+    const commands = {
+      push: this.push,
+      pushAll: this.pushAll,
+      newScript: this.newScript,
+      search: this.search,
+      compare: this.compare,
+      pullObjectsFromText: this.pullObjectsFromText,
+    } as const;
+    registerCommands(subscriptions, commands);
+  }
+
+  private parseFilePath = async (textEditor: vscode.TextEditor | undefined) => {
     try {
       this.editor = textEditor;
       if (!this.editor) throw buttonError;
@@ -80,11 +108,7 @@ class ActiveEditor {
         if (!isTypeScript(type)) throw buttonError;
         this.type = type;
         this.field = fields.script;
-        this.parentPath = joinPath(
-          this.type,
-          this.parent,
-          scriptMeta[this.type].path
-        );
+        this.parentPath = joinChild(this.type, this.parent);
       } else if (isFileWebTemp(this.ext) && parts.length > 3) {
         this.parent = "";
         const type = parts.pop()!;
@@ -94,17 +118,10 @@ class ActiveEditor {
         this.parentPath = this.type;
       } else throw buttonError;
       this.workspace = parts.pop()!;
-      const config = getConfig(parts.pop()!);
+      const config = webView.getConfig(parts.pop()!);
       if (Object.keys(config).length === 0) throw buttonError;
-      if (!this.config || this.config.url !== config.url) {
-        const urlFolder = urlToFolder(config.url);
-        this.typesUri = vscode.Uri.joinPath(typesFolderUri, urlFolder);
-        await setConnectionShim(config.url);
-      }
+      await typeGenerator.setUrl(config.url);
       this.config = config;
-      this.isTreeActive =
-        treeView.connection === this.config.name &&
-        treeView.workspace === this.workspace;
       const isEditable = isWorkspaceEditable(this.workspace, this.config),
         visibility = {
           push: isEditable,
@@ -113,19 +130,20 @@ class ActiveEditor {
           compare: true,
         } as const;
       setButtonVisibility(visibility);
-      if (!this.isTreeActive) {
-        treeView.activeItem = undefined;
-        return;
-      }
-      await treeView.setActiveItem(this.type, this.name, this.parent);
+      await treeView.setActiveItem(
+        this.config.name,
+        this.workspace,
+        this.type,
+        this.name,
+        this.parent,
+      );
     } catch (err: any) {
-      this.isTreeActive = false;
       setButtonVisibility(disableAllButtons);
       treeView.activeItem = undefined;
     }
   };
 
-  reparseFilePath = ({ files }: vscode.FileRenameEvent) => {
+  private reparseFilePath = ({ files }: vscode.FileRenameEvent) => {
     const textEditor = vscode.window?.activeTextEditor;
     if (!textEditor) return;
     for (const { newUri } of files) {
@@ -134,35 +152,29 @@ class ActiveEditor {
     }
   };
 
-  push = async () => {
+  private push = async () => {
     await this.document.save();
     const content = this.document.getText(),
-      payload = { Name: this.name, [this.field]: content };
-    if (isFileScript(this.ext)) {
-      if (!isScriptNameValid(this.name, content))
-        return vscode.window.showErrorMessage(error.nameDifferent);
-      payload["Program Language"] = "JS";
-    }
+      payload = getPayload(this.name, this.field, content);
+    if (isFileScript(this.ext) && !isScriptNameValid(this.name, content))
+      return vscode.window.showErrorMessage(
+        "Unable to push script, name of the file and the function is not the same!",
+      );
     const answer = await vscode.window.showInformationMessage(
       `Do you want to push ${this.name} to Siebel?`,
-      ...pushNo
+      ...pushNo,
     );
     if (answer !== "Push") return;
-    const path = joinPath(
-        "workspace",
-        this.workspace,
-        this.parentPath,
-        this.name
-      ),
+    const path = joinWorkspace(this.workspace, this.parentPath, this.name),
       result = await putObject(this.config, path, payload);
     if (!result) return;
     vscode.window.showInformationMessage(
-      `Successfully pushed ${this.name} to Siebel!`
+      `Successfully pushed ${this.name} to Siebel!`,
     );
     treeView.activeItemState = itemStates.same;
   };
 
-  pushAll = async () => {
+  private pushAll = async () => {
     const files = await getScriptsOnDisk(this.folderUri),
       invalid: string[] = [],
       payloads = await Promise.all(
@@ -170,53 +182,44 @@ class ActiveEditor {
           const fileUri = getFileUri(this.folderUri, fileName, fileExt),
             content = await readFile(fileUri);
           if (!isScriptNameValid(fileName, content)) invalid.push(fileName);
-          return <Payload>{
-            Name: fileName,
-            Script: content,
-            "Program Language": "JS",
-          };
-        })
+          return getPayload(fileName, fields.script, content);
+        }),
       );
     if (invalid.length > 0)
       return vscode.window.showErrorMessage(
         `Unable to push all, file and function names differ for the following script(s): ${invalid.join(
-          ", "
-        )}`
+          ", ",
+        )}`,
       );
     const answer = await vscode.window.showInformationMessage(
       `Do you want to push all scripts of ${this.parent} to Siebel?`,
-      ...pushAllNo
+      ...pushAllNo,
     );
     if (answer !== "Push All") return;
     for (const payload of payloads) {
-      const path = joinPath(
-          "workspace",
-          this.workspace,
-          this.parentPath,
-          payload.Name
-        ),
+      const path = joinWorkspace(this.workspace, this.parentPath, payload.Name),
         result = await putObject(this.config, path, payload);
       if (!result) return;
     }
     vscode.window.showInformationMessage(
-      `Successfully pushed  all scripts of ${this.parent} to Siebel!`
+      `Successfully pushed  all scripts of ${this.parent} to Siebel!`,
     );
     treeView.activeObjectState = itemStates.same;
   };
 
-  newScript = async () => {
+  private newScript = async () => {
     const fileUri = await createNewScript(
       this.folderUri,
       <Script>this.type,
       this.parent,
-      this.config.fileExtension
+      this.config.fileExtension,
     );
     if (!fileUri) return;
     await openFile(fileUri);
     await treeView.reveal();
   };
 
-  search = async () => {
+  private search = async () => {
     const selection = this.editor!.selection,
       selected = selection.isEmpty
         ? this.document.getWordRangeAtPosition(selection.active)
@@ -225,7 +228,7 @@ class ActiveEditor {
     await searchInFiles(this.folderUri, query);
   };
 
-  compare = async () => {
+  private compare = async () => {
     const items: vscode.QuickPickItem[] = [
       {
         label: this.workspace,
@@ -234,9 +237,9 @@ class ActiveEditor {
     ];
     if (this.config.restWorkspaces) {
       const data = await getObject(
-        "allWorkspaces",
         this.config,
-        paths.workspaces
+        paths.workspace,
+        queryObject.allWorkspaces,
       );
       while (data.length > 0) {
         const {
@@ -258,41 +261,31 @@ class ActiveEditor {
     const answer = await vscode.window.showQuickPick(items, compareOptions);
     if (!answer) return;
     const { label } = answer,
-      path = joinPath("workspace", label, this.parentPath, this.name),
-      response = await getObject(`compare${this.field}`, this.config, path),
+      path = joinWorkspace(label, this.parentPath, this.name),
+      response = await getObject(
+        this.config,
+        path,
+        queryObject[`compare${this.field}`],
+      ),
       content = response[0]?.[this.field],
       compareMessage = `Comparison of ${this.name} between ${label} and ${this.workspace} (on disk)`,
       state = await compareObjects(
         content,
         this.ext,
         this.document.uri,
-        compareMessage
+        compareMessage,
       );
     if (label !== this.workspace) return;
     treeView.activeItemState = state;
   };
 
-  pullObjectTypes = async () => {
+  private pullObjectsFromText = async () => {
     const text = this.document.getText(),
-      busObjects = new Set<string>(),
-      busComps = new Set<string>(),
       config = {
         ...this.config,
-        url: joinPath(this.config.url, "workspace", this.workspace),
+        url: joinUrl(this.config.url, this.workspace),
       };
-    for (const [, name] of text.matchAll(regexp.busComp)) {
-      busComps.add(name);
-    }
-    for (const [, name] of text.matchAll(regexp.busObject)) {
-      busObjects.add(name);
-    }
-    for (const busObject of busObjects) {
-      await getBusObjectBusCompsType(this.typesUri, config, busObject);
-    }
-    for (const busComp of busComps) {
-      await getBusCompFieldsType(this.typesUri, config, busComp);
-    }
-    await writeObjectTypes(this.typesUri);
+    await typeGenerator.pullObjectsFromText(text, config);
   };
 }
 

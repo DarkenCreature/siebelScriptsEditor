@@ -1,170 +1,278 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
+  <head>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
 
-<head>
-	<link rel="stylesheet" href="./style.css">
-</head>
-
-<body>
-	<h1 id="title"></h1>
-	<div class="config">
-		<div class="grid-item grid-1">
-			<label for="connection-name">Connection Name</label>
-		</div>
-		<div class="grid-item grid-24">
-			<input type="text" class="input" name="connection-name" id="connection-name" oninput="enableButtons()">
-		</div>
-		<div class="grid-item grid-1">
-			<label for="url">Siebel REST API Base URI</label>
-		</div>
-		<div class="grid-item grid-24">
-			<input type="text" class="input" name="url" id="url" placeholder="https://Server Name:Port/siebel/v1.0"
-				oninput="enableButtons()">
-		</div>
-		<div class="grid-item grid-1">
-			<label for="username">Username</label>
-		</div>
-		<div class="grid-item grid-24">
-			<input type="text" class="input" name="username" id="username" oninput="enableButtons()">
-		</div>
-		<div class="grid-item grid-1">
-			<label for="password">Password</label>
-		</div>
-		<div class="grid-item grid-24">
-			<input type="password" class="input" name="password" id="password" oninput="enableButtons()">
-		</div>
-		<div class="grid-item grid-1">
-			<label for="file-extension">Script File Extension</label>
-		</div>
-		<div class="grid-item grid-24">
-			<form class="radio-row" name="file-extension" id="file-extension">
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="ext" value="js">
-					js
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="ext" value="ts">
-					ts
-				</label>
-			</form>
-		</div>
-		<div class="grid-item grid-1">
-			<label for="max-page-size">Maximum Page Size</label>
-		</div>
-		<div class="grid-item grid-24">
-			<form class="radio-row" name="max-page-size" id="max-page-size">
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="10">
-					10
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="20">
-					20
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="50">
-					50
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="100">
-					100
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="200">
-					200
-				</label>
-				<label class="radio-label">
-					<input type="radio" class="radio-button checkbox" name="page" value="500">
-					500
-				</label>
-			</form>
-		</div>
-		<div class="grid-item grid-1">
-			<label for="rest-workspaces">Get Workspaces From REST</label>
-		</div>
-		<div class="grid-item grid-24 checkbox-container">
-			<input type="checkbox" class="checkbox" name="rest-workspaces" id="rest-workspaces"
-				onchange="buttonHandler('testRestWorkspaces')">
-		</div>
-		<div class="grid-item grid-1">
-			<label for="is-default">Default Connection</label>
-		</div>
-		<div class="grid-item grid-24 checkbox-container">
-			<input type="checkbox" class="checkbox" name="is-default" id="is-default">
-		</div>
-		<div class="grid-item grid-1">
-			<Button class="button" id="test-connection" onclick="buttonHandler('testConnection')">Test Connection</Button>
-		</div>
-		<div class="grid-item grid-23">
-			<Button class=" button" id="new-or-edit-connection" onclick="buttonHandler('newOrEditConnection')">Save
-				Connection</Button>
-		</div>
-		<div class="grid-item grid-3">
-			<Button class="button" id="delete-connection" onclick="buttonHandler('deleteConnection')">Delete
-				Connection</Button>
-		</div>
-	</div>
-	<script>
-		let isNew = true;
-		const vscode = acquireVsCodeApi(),
-			getValues = () => ({
-				name: document.getElementById("connection-name").value,
-				url: document.getElementById("url").value,
-				username: document.getElementById("username").value,
-				password: document.getElementById("password").value,
-				restWorkspaces: document.getElementById("rest-workspaces").checked,
-				isDefault: document.getElementById("is-default").checked,
-				fileExtension: document.querySelector(`input[name="ext"]:checked`).value,
-				maxPageSize: document.querySelector(`input[name="page"]:checked`).value,
-			}),
-			buttonHandler = (command) => vscode.postMessage({
-				command: command === "newOrEditConnection" ? isNew ? "newConnection" : "editConnection" : command,
-				...getValues()
-			}),
-			enableButtons = () => {
-				const { name, url, username, password } = getValues(),
-					isDisabled = !(name && url && username && password);
-				document.getElementById("test-connection").disabled = isDisabled;
-				document.getElementById("new-or-edit-connection").disabled = isDisabled;
-				document.getElementById("rest-workspaces").disabled = isDisabled;
-				document.getElementById("is-default").disabled = isDisabled;
-				document.querySelectorAll(`input[type="radio"]`).forEach((item) => item.disabled = isDisabled);
-			};
-		window.addEventListener("message", ({
-			data: { name = "",
-				url = "",
-				username = "",
-				password = "",
-				fileExtension = "js",
-				maxPageSize = 100,
-				restWorkspaces = false,
-				isDefault = false,
-				uncheck = false
-			}
-		}) => {
-			if (uncheck) return document.getElementById("rest-workspaces").checked = false;
-			isNew = !name;
-			document.getElementById("connection-name").value = name;
-			document.getElementById("url").value = url;
-			document.getElementById("username").value = username;
-			document.getElementById("password").value = password;
-			document.querySelector(`input[name="ext"][value="${fileExtension}"]`).checked = true;
-			document.querySelector(`input[name="page"][value="${maxPageSize}"]`).checked = true;
-			document.getElementById("rest-workspaces").checked = restWorkspaces;
-			document.getElementById("is-default").checked = isDefault;
-			if (isNew) {
-				document.getElementById("connection-name").focus();
-				document.getElementById("title").textContent = "New Connection";
-				document.getElementById("connection-name").readOnly = false;
-				document.getElementById("delete-connection").disabled = true;
-			} else {
-				document.getElementById("title").textContent = "Edit Connection";
-				document.getElementById("connection-name").readOnly = true;
-				document.getElementById("delete-connection").disabled = false;
-			}
-			enableButtons();
-		});
-	</script>
-</body>
-
+  <body>
+    <h1 id="title"></h1>
+    <div class="config">
+      <div class="grid-item grid-1">
+        <label for="connection-name">Connection Name</label>
+      </div>
+      <div class="grid-item grid-24">
+        <input
+          type="text"
+          class="input"
+          name="connection-name"
+          id="connection-name"
+          oninput="enableButtons()"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <label for="url">Siebel REST API Base URI</label>
+      </div>
+      <div class="grid-item grid-24">
+        <input
+          type="text"
+          class="input"
+          name="url"
+          id="url"
+          placeholder="https://Server Name:Port/siebel/v1.0"
+          oninput="enableButtons()"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <label for="username">Username</label>
+      </div>
+      <div class="grid-item grid-24">
+        <input
+          type="text"
+          class="input"
+          name="username"
+          id="username"
+          oninput="enableButtons()"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <label for="password">Password</label>
+      </div>
+      <div class="grid-item grid-24">
+        <input
+          type="password"
+          class="input"
+          name="password"
+          id="password"
+          oninput="enableButtons()"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <label for="file-extension">Script File Extension</label>
+      </div>
+      <div class="grid-item grid-24">
+        <form class="radio-row" name="file-extension" id="file-extension">
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="ext"
+              value="js"
+            />
+            js
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="ext"
+              value="ts"
+            />
+            ts
+          </label>
+        </form>
+      </div>
+      <div class="grid-item grid-1">
+        <label for="max-page-size">Maximum Page Size</label>
+      </div>
+      <div class="grid-item grid-24">
+        <form class="radio-row" name="max-page-size" id="max-page-size">
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="10"
+            />
+            10
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="20"
+            />
+            20
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="50"
+            />
+            50
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="100"
+            />
+            100
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="200"
+            />
+            200
+          </label>
+          <label class="radio-label">
+            <input
+              type="radio"
+              class="radio-button checkbox"
+              name="page"
+              value="500"
+            />
+            500
+          </label>
+        </form>
+      </div>
+      <div class="grid-item grid-1">
+        <label for="rest-workspaces">Get Workspaces From REST</label>
+      </div>
+      <div class="grid-item grid-24 checkbox-container">
+        <input
+          type="checkbox"
+          class="checkbox"
+          name="rest-workspaces"
+          id="rest-workspaces"
+          onchange="buttonHandler('testRestWorkspaces')"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <label for="is-default">Default Connection</label>
+      </div>
+      <div class="grid-item grid-24 checkbox-container">
+        <input
+          type="checkbox"
+          class="checkbox"
+          name="is-default"
+          id="is-default"
+        />
+      </div>
+      <div class="grid-item grid-1">
+        <button
+          class="button"
+          id="test-connection"
+          onclick="buttonHandler('testConnection')"
+        >
+          Test Connection
+        </button>
+      </div>
+      <div class="grid-item grid-23">
+        <button
+          class="button"
+          id="new-or-edit-connection"
+          onclick="buttonHandler('newOrEditConnection')"
+        >
+          Save Connection
+        </button>
+      </div>
+      <div class="grid-item grid-3">
+        <button
+          class="button"
+          id="delete-connection"
+          onclick="buttonHandler('deleteConnection')"
+        >
+          Delete Connection
+        </button>
+      </div>
+    </div>
+    <script>
+      let isNew = true;
+      const vscode = acquireVsCodeApi(),
+        getValues = () => ({
+          name: document.getElementById("connection-name").value,
+          url: document.getElementById("url").value,
+          username: document.getElementById("username").value,
+          password: document.getElementById("password").value,
+          restWorkspaces: document.getElementById("rest-workspaces").checked,
+          isDefault: document.getElementById("is-default").checked,
+          fileExtension: document.querySelector(`input[name="ext"]:checked`)
+            .value,
+          maxPageSize: document.querySelector(`input[name="page"]:checked`)
+            .value,
+        }),
+        buttonHandler = (command) =>
+          vscode.postMessage({
+            command:
+              command === "newOrEditConnection"
+                ? isNew
+                  ? "newConnection"
+                  : "editConnection"
+                : command,
+            ...getValues(),
+          }),
+        enableButtons = () => {
+          const { name, url, username, password } = getValues(),
+            isDisabled = !(name && url && username && password);
+          document.getElementById("test-connection").disabled = isDisabled;
+          document.getElementById("new-or-edit-connection").disabled =
+            isDisabled;
+          document.getElementById("rest-workspaces").disabled = isDisabled;
+          document.getElementById("is-default").disabled = isDisabled;
+          document
+            .querySelectorAll(`input[type="radio"]`)
+            .forEach((item) => (item.disabled = isDisabled));
+        };
+      window.addEventListener(
+        "message",
+        ({
+          data: {
+            name = "",
+            url = "",
+            username = "",
+            password = "",
+            fileExtension = "js",
+            maxPageSize = 100,
+            restWorkspaces = false,
+            isDefault = false,
+            uncheck = false,
+          },
+        }) => {
+          if (uncheck)
+            return (document.getElementById("rest-workspaces").checked = false);
+          isNew = !name;
+          document.getElementById("connection-name").value = name;
+          document.getElementById("url").value = url;
+          document.getElementById("username").value = username;
+          document.getElementById("password").value = password;
+          document.querySelector(
+            `input[name="ext"][value="${fileExtension}"]`,
+          ).checked = true;
+          document.querySelector(
+            `input[name="page"][value="${maxPageSize}"]`,
+          ).checked = true;
+          document.getElementById("rest-workspaces").checked = restWorkspaces;
+          document.getElementById("is-default").checked = isDefault;
+          if (isNew) {
+            document.getElementById("connection-name").focus();
+            document.getElementById("title").textContent = "New Connection";
+            document.getElementById("connection-name").readOnly = false;
+            document.getElementById("delete-connection").disabled = true;
+          } else {
+            document.getElementById("title").textContent = "Edit Connection";
+            document.getElementById("connection-name").readOnly = true;
+            document.getElementById("delete-connection").disabled = false;
+          }
+          enableButtons();
+        },
+      );
+    </script>
+  </body>
 </html>
