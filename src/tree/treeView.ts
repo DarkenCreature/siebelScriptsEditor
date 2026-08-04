@@ -65,7 +65,7 @@ class TreeView {
     username: "",
     password: "",
     fileExtension: "js",
-    maxPageSize: 100,
+    maxPageSize: "100",
   };
   private baseURL = "";
   declare folderUri: vscode.Uri;
@@ -186,7 +186,7 @@ class TreeView {
     username,
     password,
     fileExtension = "js",
-    maxPageSize = 100,
+    maxPageSize = "100",
   }: Config) {
     this.baseURL = url;
     this.config.username = username;

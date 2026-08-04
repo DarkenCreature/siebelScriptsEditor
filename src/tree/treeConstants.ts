@@ -46,20 +46,6 @@ export const contextValues = {
       ),
       tooltip: "Modified",
     },
-    fieldsDownloaded: {
-      icon: new vscode.ThemeIcon(
-        "check",
-        new vscode.ThemeColor("charts.green"),
-      ),
-      tooltip: "Overwrite fields for autocompletion",
-    },
-    fieldsNotDownloaded: {
-      icon: new vscode.ThemeIcon(
-        "cloud",
-        new vscode.ThemeColor("charts.yellow"),
-      ),
-      tooltip: "Get business component and fields for autocompletion",
-    },
   } as const,
   selectCommand = {
     command: "siebelscriptandwebtempeditor.selectTreeItem",

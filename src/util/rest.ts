@@ -40,7 +40,7 @@ export type RestConfig = {
   username: string;
   password: string;
   fileExtension: "js" | "ts";
-  maxPageSize: 10 | 20 | 50 | 100 | 200 | 500;
+  maxPageSize: "10" | "20" | "50" | "100" | "200" | "500";
 };
 
 export type Config = {
@@ -118,7 +118,7 @@ export const SERVICE = "Business Service",
     },
     pullScripts: {
       params: { fields: fields.nameScript, searchSpec: searchSpec.inactive },
-      error: "Unable to pull, object was not found in Siebel!",
+      error: "",
     },
     pullDefinition: {
       params: { fields: fields.nameDefinition },
@@ -183,38 +183,35 @@ export const getPayload = (
 };
 
 export const getObject = async (
-  { url: baseURL, username, password, maxPageSize = 100 }: RestConfig,
+  { url: baseURL, username, password, maxPageSize = "100" }: RestConfig,
   path: string,
   query: Query,
   firstPageOnly = true,
 ): Promise<RestResponse[]> => {
   try {
-    const PageSize = Number(maxPageSize),
-      request = {
-        baseURL,
-        auth: { username, password },
-        params: {
-          ...query.params,
-          PageSize,
-        },
-      };
+    const request = {
+      baseURL,
+      auth: { username, password },
+      params: {
+        ...query.params,
+        PageSize: Number(maxPageSize),
+      },
+    };
 
-    let response = await restApi.get(path, request),
-      stopPaging = firstPageOnly || response?.data?.lastpage !== "false";
+    let response = await restApi.get(path, request);
 
     const data = response?.data?.items ?? [];
 
+    if (firstPageOnly) return data;
+
     //older Siebel versions does not accept StartRowNum param for fields
     //paged only for server scripts and fields
-    if (stopPaging) return data;
+    request.params.StartRowNum = 1;
 
-    request.params.StartRowNum = PageSize + 1;
-
-    while (!stopPaging) {
+    while (response?.data?.lastpage === "false") {
+      request.params.StartRowNum += request.params.PageSize;
       response = await restApi.get(path, request);
-      stopPaging = response?.data?.lastpage !== "false";
       data.push(...(response?.data?.items ?? []));
-      request.params.StartRowNum += PageSize;
     }
     return data;
   } catch (err: any) {

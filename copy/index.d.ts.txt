@@ -596,7 +596,7 @@ interface Clib {
   rand(): number;
   srand(seed: number): void;
   system(command: string): number;
-  mkdir(folder: string): void;
+  mkdir(folder: string): number;
 }
 
 interface FilePointer {}

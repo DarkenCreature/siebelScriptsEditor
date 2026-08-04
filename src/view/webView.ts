@@ -191,7 +191,7 @@ class WebView {
     username,
     password,
     fileExtension = "js",
-    maxPageSize = 100,
+    maxPageSize = "100",
     restWorkspaces,
     isDefault,
   }: { command: string } & Config) => {

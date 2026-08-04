@@ -18,7 +18,8 @@ import {
 
 const yesNo = ["Yes", "No"] as const;
 const busObjectOptions = {
-    title: "Select which Business Objects you want to download Business Components for",
+    title:
+      "Select which Business Objects you want to download Business Components for",
     canPickMany: true,
   } as const,
   busCompOptions = {
@@ -120,14 +121,14 @@ class TypeGenerator {
 
     for (const { Name, PickList } of response) {
       fields.push(Name);
-      if (!PickList) continue;
+      if (!PickList || PickList.includes("/")) continue;
       const pickListPath = joinPath(paths.pickList, PickList),
-        typeValueNotNull = await getObject(
+        transCodeResponse = await getObject(
           config,
           pickListPath,
           queryObject.pullPickList,
         );
-      if (typeValueNotNull.length === 0) continue;
+      if (transCodeResponse.length === 0) continue;
       fields.push(`${Name}.TransCode`);
     }
     const content = this.getObjecTypes("Fields", fields);
