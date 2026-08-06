@@ -73,7 +73,7 @@
 			},
 			{
 				"command": "siebelscriptandwebtempeditor.pullObjectsFromText",
-				"title": "Get business object, business components and fields for autocompletion",
+				"title": "Get business objects, components and fields",
 				"icon": "$(symbol-ruler)",
 				"when": "workspaceFolderCount > 0 && siebelscriptandwebtempeditor.searchEnabled && !isInDiffEditor"
 			},
@@ -148,7 +148,7 @@
 			},
 			{
 				"command": "siebelscriptandwebtempeditor.pullBusObjectTree",
-				"title": "Get Business Object Components For Autocompletion",
+				"title": "Get Business Object Components",
 				"icon": "$(repo-pull)"
 			}
 		],

@@ -217,7 +217,7 @@ export const getObject = async (
   } catch (err: any) {
     vscode.window.showErrorMessage(
       err.response?.status === 404
-        ? (query.error ?? "") //átgondolni
+        ? (query.error ?? "")
         : (err.response?.data?.ERROR ?? err.message),
     );
     return [];
