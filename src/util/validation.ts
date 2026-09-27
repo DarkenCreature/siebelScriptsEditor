@@ -1,5 +1,5 @@
 import { OnDisk } from "./file";
-import { SERVICE, BUSCOMP, APPLET, APPLICATION, WEBTEMP, Script, WebTemp, RestConfig } from "./rest";
+import { SERVICE, BUSCOMP, APPLET, APPLICATION, WEBTEMP, WORKFLOW, Script, WebTemp, Workflow, RestConfig } from "./rest";
 
 const reWorkspace = /^[A-Za-z0-9_-]+$/,
   reIdentifier = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
@@ -43,3 +43,6 @@ export const isTypeScript = (type: string): type is Script =>
 
 export const isTypeWebTemp = (type: string): type is WebTemp =>
   type === WEBTEMP;
+
+export const isTypeWorkflow = (type: string): type is Workflow =>
+  type === WORKFLOW;

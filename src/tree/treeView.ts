@@ -6,10 +6,13 @@ import { WebTempItem } from "./item/WebTempItem";
 import { BusObjectManager } from "./manager/BusObjectManager";
 import { ObjectManager } from "./manager/ObjectManager";
 import { WebTempManager } from "./manager/WebTempManager";
+import { WorkflowManager } from "./manager/WorkflowManager";
+import { WorkflowItem } from "./item/WorkflowItem";
 import { itemStates, ItemState } from "./treeConstants";
 import { getWorkspaceUri } from "../util/file";
 import {
   getObject,
+  getWorkflow,
   putObject,
   BUSOBJECT,
   APPLET,
@@ -17,6 +20,7 @@ import {
   BUSCOMP,
   SERVICE,
   WEBTEMP,
+  WORKFLOW,
   joinUrl,
   Query,
   BusObject,
@@ -27,6 +31,8 @@ import {
   Payload,
   RestConfig,
   Config,
+  Workflow,
+  WorkflowProgress,
 } from "../util/rest";
 import { isWorkspaceEditable } from "../util/validation";
 import {
@@ -48,7 +54,7 @@ class TreeView {
   private readonly _onDidChangeTreeData = new vscode.EventEmitter();
   private readonly treeData = new Map<
     Type | BusObject,
-    ObjectManager | WebTempManager | BusObjectManager
+    ObjectManager | WebTempManager | BusObjectManager | WorkflowManager
   >([
     [SERVICE, new ObjectManager(SERVICE)],
     [BUSCOMP, new ObjectManager(BUSCOMP)],
@@ -56,6 +62,7 @@ class TreeView {
     [APPLICATION, new ObjectManager(APPLICATION)],
     [WEBTEMP, new WebTempManager()],
     [BUSOBJECT, new BusObjectManager()],
+    [WORKFLOW, new WorkflowManager()],
   ]);
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
   readonly refresh = (treeItem: vscode.TreeItem) =>
@@ -69,8 +76,8 @@ class TreeView {
   };
   private baseURL = "";
   declare folderUri: vscode.Uri;
-  activeItem: ScriptItem | WebTempItem | undefined;
-  syncedItem: ScriptItem | WebTempItem | undefined;
+  activeItem: ScriptItem | WebTempItem | WorkflowItem | undefined;
+  syncedItem: ScriptItem | WebTempItem | WorkflowItem | undefined;
   connection = "";
   workspace = "";
   type: Type = SERVICE;
@@ -92,13 +99,13 @@ class TreeView {
   init(subscriptions: Subscription[]) {
     const commands = {
       selectTreeItem: async (
-        treeItem: ScriptItem | WebTempItem | BusCompItem,
+        treeItem: ScriptItem | WebTempItem | WorkflowItem | BusCompItem,
       ) => await treeItem.select(),
       searchDisk: async (
-        treeItem: ObjectManager | WebTempManager | BusObjectManager,
+        treeItem: ObjectManager | WebTempManager | WorkflowManager | BusObjectManager,
       ) => await treeItem.searchDisk(),
       showFilesOnDisk: async (
-        treeItem: ObjectManager | WebTempManager | BusObjectManager,
+        treeItem: ObjectManager | WebTempManager | WorkflowManager | BusObjectManager,
       ) => await treeItem.search(),
       newServiceTree: async (treeItem: ObjectManager) =>
         await treeItem.newService(),
@@ -106,9 +113,9 @@ class TreeView {
         await treeItem.pullBusComp(),
       pullAllTree: async (treeItem: ObjectItem) => await treeItem.pullAll(),
       newScriptTree: async (treeItem: ObjectItem) => await treeItem.newScript(),
-      revertTree: async (treeItem: ScriptItem | WebTempItem) =>
+      revertTree: async (treeItem: ScriptItem | WebTempItem | WorkflowItem) =>
         await treeItem.revert(),
-      compareTree: async (treeItem: ScriptItem | WebTempItem) =>
+      compareTree: async (treeItem: ScriptItem | WebTempItem | WorkflowItem) =>
         await treeItem.compare(),
       pullBusObjectTree: async (treeItem: BusObjectItem) =>
         await treeItem.pullBusObject(),
@@ -157,14 +164,16 @@ class TreeView {
     treeItem:
       | ObjectManager
       | WebTempManager
+      | WorkflowManager
       | ObjectItem
       | ScriptItem
-      | WebTempItem,
+      | WebTempItem
+      | WorkflowItem,
   ) {
     return treeItem;
   }
 
-  getChildren(treeItem?: ObjectManager | WebTempManager | ObjectItem) {
+  getChildren(treeItem?: ObjectManager | WebTempManager | WorkflowManager | ObjectItem) {
     return treeItem ? treeItem.treeItems : [...this.treeData.values()];
   }
 
@@ -172,10 +181,12 @@ class TreeView {
     treeItem:
       | ObjectManager
       | WebTempManager
+      | WorkflowManager
       | BusObjectManager
       | ObjectItem
       | ScriptItem
       | WebTempItem
+      | WorkflowItem
       | BusCompItem,
   ) {
     return treeItem.parent;
@@ -221,6 +232,10 @@ class TreeView {
     return await putObject(this.config, path, data);
   }
 
+  async getWorkflow(path: string, progress?: WorkflowProgress) {
+    return await getWorkflow(this.config, path, progress);
+  }
+
   async search(searchString?: string) {
     await this.treeData.get(this.type)!.search(searchString);
   }
@@ -228,13 +243,13 @@ class TreeView {
   async setActiveItem(
     connection: string,
     workspace: string,
-    type: Script | WebTemp,
+    type: Script | WebTemp | Workflow,
     name: string,
     parent?: string,
   ) {
     this.activeItem =
       this.connection === connection && this.workspace === workspace
-        ? await (<ObjectManager | WebTempManager>(
+        ? await (<ObjectManager | WebTempManager | WorkflowManager>(
             this.treeData.get(type)
           )).getItem(name, parent)
         : undefined;

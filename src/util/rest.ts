@@ -8,6 +8,8 @@ export type Query = {
     fields?: (typeof fields)[keyof typeof fields];
     PageSize?: Config["maxPageSize"];
     StartRowNum?: number;
+    childlinks?: string;
+    ViewMode?: string;
   };
   error?: string;
 };
@@ -20,11 +22,13 @@ export type Script =
 
 export type WebTemp = typeof WEBTEMP;
 
+export type Workflow = typeof WORKFLOW;
+
 export type BusObject = typeof BUSOBJECT;
 
-export type Type = Script | WebTemp;
+export type Type = Script | WebTemp | Workflow;
 
-export type Payload = ReturnType<typeof getPayload>;
+export type Payload = Record<string, unknown>;
 
 export type RestResponse = {
   Name: string;
@@ -33,7 +37,20 @@ export type RestResponse = {
   Status?: string;
   RepositoryWorkspace?: RestResponse[];
   PickList?: string;
+  Link?: RestLink[];
+  [key: string]: unknown;
 };
+
+type RestLink = {
+  rel: string;
+  href: string;
+  name: string;
+};
+
+export type WorkflowProgress = vscode.Progress<{
+  message?: string;
+  increment?: number;
+}>;
 
 export type RestConfig = {
   url: string;
@@ -62,6 +79,7 @@ export const SERVICE = "Business Service",
   APPLET = "Applet",
   APPLICATION = "Application",
   WEBTEMP = "Web Template",
+  WORKFLOW = "Workflow Process",
   BUSOBJECT = "Business Object",
   paths = {
     [SERVICE]: "Business Service Server Script",
@@ -69,6 +87,7 @@ export const SERVICE = "Business Service",
     [APPLET]: "Applet Server Script",
     [APPLICATION]: "Application Server Script",
     [BUSOBJECT]: "Business Object Component",
+    [WORKFLOW]: WORKFLOW,
     project: "Project",
     field: "Field",
     pickList: "Pick List",
@@ -123,6 +142,14 @@ export const SERVICE = "Business Service",
     pullDefinition: {
       params: { fields: fields.nameDefinition },
       error: "Unable to pull, web template was not found in Siebel!",
+    },
+    pullWorkflow: {
+      params: {},
+      error: "Unable to pull, workflow was not found in Siebel!",
+    },
+    pullWorkflows: {
+      params: { fields: fields.name, searchSpec: searchSpec.inactive },
+      error: "",
     },
     pullBusObject: {
       params: { fields: fields.name, searchSpec: searchSpec.inactive },
@@ -222,6 +249,86 @@ export const getObject = async (
     );
     return [];
   }
+};
+
+const workflowChildren: Record<string, string[]> = {
+  [WORKFLOW]: ["WF Process Metric", "WF Process Prop", "WF Step"],
+  "WF Step": ["WF Step Branch", "WF Step I/O Argument", "WF Step Recipient"],
+  "WF Step Branch": ["WF Branch Connector", "WF Branch Criteria"],
+  "WF Branch Criteria": ["WF Branch Criteria Value"],
+};
+
+const getRepositoryLinkPath = (baseUrl: string, href: string) => {
+  const fallbackOrigin = "http://siebel.invalid",
+    linkPath = new URL(href, fallbackOrigin).pathname,
+    basePath = new URL(baseUrl, fallbackOrigin).pathname.replace(/\/$/, "");
+  if (linkPath.startsWith(`${basePath}/`))
+    return linkPath.slice(basePath.length + 1);
+
+  const workspaceMarker = "/workspace/",
+    workspaceIndex = linkPath.toLowerCase().indexOf(workspaceMarker);
+  if (workspaceIndex < 0) return linkPath.replace(/^\//, "");
+  const repositoryPath = linkPath.slice(
+      workspaceIndex + workspaceMarker.length,
+    ),
+    firstSeparator = repositoryPath.indexOf("/");
+  return firstSeparator < 0
+    ? ""
+    : repositoryPath.slice(firstSeparator + 1);
+};
+
+const expandWorkflow = async (
+  config: RestConfig,
+  item: RestResponse,
+  type: string,
+  progress?: WorkflowProgress,
+): Promise<RestResponse> => {
+  const links = item.Link ?? [];
+  delete item.Link;
+  for (const childType of workflowChildren[type] ?? []) {
+    const link = links.find(
+      ({ rel, name }) => rel.toLowerCase() === "child" && name === childType,
+    );
+    if (!link) continue;
+    progress?.report({
+      message: `${childType} (${item.Name})`,
+    });
+    const grandchildren = workflowChildren[childType] ?? [],
+      children = await getObject(
+        config,
+        getRepositoryLinkPath(config.url, link.href),
+        {
+          params: {
+            childlinks: grandchildren.length > 0
+              ? grandchildren.join(",")
+              : "None",
+          },
+        },
+        false,
+      );
+    item[childType] = await Promise.all(
+      children.map((child) =>
+        expandWorkflow(config, child, childType, progress),
+      ),
+    );
+  }
+  return item;
+};
+
+export const getWorkflow = async (
+  config: RestConfig,
+  path: string,
+  progress?: WorkflowProgress,
+): Promise<RestResponse | undefined> => {
+  progress?.report({ message: "Workflow Process" });
+  const children = workflowChildren[WORKFLOW],
+    response = await getObject(config, path, {
+      params: { childlinks: children.join(",") },
+      error: queryObject.pullWorkflow.error,
+    });
+  return response[0]
+    ? await expandWorkflow(config, response[0], WORKFLOW, progress)
+    : undefined;
 };
 
 export const putObject = async (

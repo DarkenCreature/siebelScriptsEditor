@@ -11,6 +11,7 @@ import {
 import {
   isFileScript,
   isFileWebTemp,
+  isFileWorkflow,
   getScriptsOnDisk,
   getFileUri,
   openFile,
@@ -22,6 +23,7 @@ import {
   fields,
   putObject,
   getObject,
+  getWorkflow,
   paths,
   joinWorkspace,
   joinUrl,
@@ -35,6 +37,7 @@ import {
 import {
   isTypeScript,
   isTypeWebTemp,
+  isTypeWorkflow,
   isWorkspaceEditable,
   isScriptNameValid,
 } from "../util/validation";
@@ -70,6 +73,7 @@ class ActiveEditor {
   declare private config: Config;
   declare private field: typeof fields.script | typeof fields.definition;
   declare private parentPath: string;
+  private isWorkflow = false;
 
   private constructor() {}
 
@@ -99,9 +103,19 @@ class ActiveEditor {
       this.document = this.editor.document;
       this.folderUri = vscode.Uri.joinPath(this.document.uri, "..");
       const parts = this.document.uri.path.split("/");
-      [this.name, this.ext] = <[string, FileExt]>parts.pop()!.split(".");
+      const fileName = parts.pop()!;
+      const workflowSuffix = ".sblwf.json";
+      if (fileName.endsWith(workflowSuffix)) {
+        this.name = fileName.slice(0, -workflowSuffix.length);
+        this.ext = "sblwf.json";
+      } else {
+        const separator = fileName.lastIndexOf(".");
+        this.name = fileName.slice(0, separator);
+        this.ext = <FileExt>fileName.slice(separator + 1);
+      }
       if (!this.name) throw buttonError;
       const isScript = isFileScript(this.ext);
+      this.isWorkflow = isFileWorkflow(this.ext);
       if (isScript && parts.length > 4) {
         this.parent = parts.pop()!;
         const type = parts.pop()!;
@@ -115,6 +129,12 @@ class ActiveEditor {
         if (!isTypeWebTemp(type)) throw buttonError;
         this.type = type;
         this.field = fields.definition;
+        this.parentPath = this.type;
+      } else if (this.isWorkflow && parts.length > 3) {
+        this.parent = "";
+        const type = parts.pop()!;
+        if (!isTypeWorkflow(type)) throw buttonError;
+        this.type = type;
         this.parentPath = this.type;
       } else throw buttonError;
       this.workspace = parts.pop()!;
@@ -154,8 +174,15 @@ class ActiveEditor {
 
   private push = async () => {
     await this.document.save();
-    const content = this.document.getText(),
-      payload = getPayload(this.name, this.field, content);
+    const content = this.document.getText();
+    let payload: Record<string, unknown>;
+    try {
+      payload = this.isWorkflow
+        ? this.parseWorkflow(content)
+        : getPayload(this.name, this.field, content);
+    } catch (err: any) {
+      return vscode.window.showErrorMessage(err.message);
+    }
     if (isFileScript(this.ext) && !isScriptNameValid(this.name, content))
       return vscode.window.showErrorMessage(
         "Unable to push script, name of the file and the function is not the same!",
@@ -173,6 +200,17 @@ class ActiveEditor {
     );
     treeView.activeItemState = itemStates.same;
   };
+
+  private parseWorkflow(content: string): Record<string, unknown> {
+    try {
+      const payload: unknown = JSON.parse(content);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload))
+        throw new Error("The workflow JSON root must be an object.");
+      return payload as Record<string, unknown>;
+    } catch (err: any) {
+      throw new Error(`Unable to push workflow: ${err.message}`);
+    }
+  }
 
   private pushAll = async () => {
     const files = await getScriptsOnDisk(this.folderUri),
@@ -262,12 +300,27 @@ class ActiveEditor {
     if (!answer) return;
     const { label } = answer,
       path = joinWorkspace(label, this.parentPath, this.name),
-      response = await getObject(
-        this.config,
-        path,
-        queryObject[`compare${this.field}`],
-      ),
-      content = response[0]?.[this.field],
+      response = this.isWorkflow
+        ? []
+        : await getObject(
+            this.config,
+            path,
+            queryObject[`compare${this.field}`],
+          ),
+      workflow = this.isWorkflow
+        ? await vscode.window.withProgress(
+            {
+              location: vscode.ProgressLocation.Notification,
+              title: `Loading workflow ${this.name}`,
+              cancellable: false,
+            },
+            async (progress) =>
+              await getWorkflow(this.config, path, progress),
+          )
+        : undefined,
+      content = this.isWorkflow
+        ? workflow && `${JSON.stringify(workflow, null, 2)}\n`
+        : response[0]?.[this.field] as string | undefined,
       compareMessage = `Comparison of ${this.name} between ${label} and ${this.workspace} (on disk)`,
       state = await compareObjects(
         content,

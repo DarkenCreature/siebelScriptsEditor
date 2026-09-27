@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import { BusObjectItem } from "../item/BusObjectItem";
 import { ObjectItem } from "../item/ObjectItem";
 import { WebTempItem } from "../item/WebTempItem";
+import { WorkflowItem } from "../item/WorkflowItem";
 import { treeView } from "../treeView";
 import { searchInFiles } from "../../util/command";
 import {
@@ -14,7 +15,7 @@ import {
 import { ItemState } from "../treeConstants";
 
 export abstract class ManagerBase<
-  T extends ObjectItem | WebTempItem | BusObjectItem,
+  T extends ObjectItem | WebTempItem | BusObjectItem | WorkflowItem,
 >
   extends vscode.TreeItem
 {

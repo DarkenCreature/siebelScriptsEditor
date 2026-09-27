@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import { RestResponse } from "./rest";
 
-export type FileExt = "js" | "ts" | "escript" | "html";
+export type FileExt = "js" | "ts" | "escript" | "html" | "sblwf.json";
 
 export type OnDisk = Map<string, FileExt>;
 
@@ -18,7 +18,11 @@ const createGetFilesOnDisk =
     if (!isFolder) return files;
     const content = await vscode.workspace.fs.readDirectory(folderUri);
     for (const [nameExt, fileType] of content) {
-      const [name, ext] = nameExt.split(".");
+      const separator = nameExt.endsWith(".sblwf.json")
+        ? nameExt.length - ".sblwf.json".length
+        : nameExt.lastIndexOf(".");
+      const name = nameExt.slice(0, separator);
+      const ext = nameExt.slice(separator + 1);
       if (!name || fileType !== 1 || !isFileValid(ext)) continue;
       files.set(name, ext);
     }
@@ -32,6 +36,11 @@ export const compareFileUris =
       ts: vscode.Uri.joinPath(workspaceUri, "compare", "compare.ts"),
       escript: vscode.Uri.joinPath(workspaceUri, "compare", "compare.escript"),
       html: vscode.Uri.joinPath(workspaceUri, "compare", "compare.html"),
+      "sblwf.json": vscode.Uri.joinPath(
+        workspaceUri,
+        "compare",
+        "compare.sblwf.json",
+      ),
     } as const),
   typesFolderUri = workspaceUri && vscode.Uri.joinPath(workspaceUri, "types"),
   connectionShimFileUri =
@@ -54,9 +63,14 @@ export const isFileScript = (ext: string): ext is "js" | "ts" | "escript" =>
 
 export const isFileWebTemp = (ext: string): ext is "html" => ext === "html";
 
+export const isFileWorkflow = (ext: string): ext is "sblwf.json" =>
+  ext === "sblwf.json";
+
 export const getScriptsOnDisk = createGetFilesOnDisk(isFileScript);
 
 export const getWebTempsOnDisk = createGetFilesOnDisk(isFileWebTemp);
+
+export const getWorkflowsOnDisk = createGetFilesOnDisk(isFileWorkflow);
 
 export const getScriptParentsOnDisk = async (folderUri: vscode.Uri) => {
   const folders: RestResponse[] = [],
